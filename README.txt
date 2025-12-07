@@ -35,6 +35,7 @@ mpisubmit.pl -p Np -t Nt hyb_sol N Nt Lx Ly Lz T timesteps
 4. MPI+CUDA
 
 Компиляция:
+module load SpectrumMPI
 make
 
 В makefile имеются переменные ARCH (архитектура), и HOST_COMP (хост компилятор).

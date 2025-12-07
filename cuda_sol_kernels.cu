@@ -1,28 +1,28 @@
 #include <iostream>
 
-__device__ __constant__ float PI = 3.1415926535;
+__device__ __constant__ double PI = 3.14159265358979323846;
 
-__device__ __constant__ float a2, tau, hx, hy, hz, a_t, Lx, Ly, Lz;
+__device__ __constant__ double a2, tau, hx, hy, hz, a_t, Lx, Ly, Lz;
 __device__ __constant__ int x_0, y_0, z_0;
 
-void init_device_constants(float a2_, float a_t_, float tau_, float hx_, float hy_, float hz_, float Lx_, float Ly_, float Lz_,  int x0, int y0, int z0, cudaStream_t stream) {
-    cudaMemcpyToSymbol(a2, &a2_, sizeof(float));
-    cudaMemcpyToSymbol(a_t, &a_t_, sizeof(float));
-    cudaMemcpyToSymbol(tau, &tau_, sizeof(float));
-    cudaMemcpyToSymbol(hx, &hx_, sizeof(float));
-    cudaMemcpyToSymbol(hy, &hy_, sizeof(float));
-    cudaMemcpyToSymbol(hz, &hz_, sizeof(float));
+void init_device_constants(double a2_, double a_t_, double tau_, double hx_, double hy_, double hz_, double Lx_, double Ly_, double Lz_,  int x0, int y0, int z0, cudaStream_t stream) {
+    cudaMemcpyToSymbol(a2, &a2_, sizeof(double));
+    cudaMemcpyToSymbol(a_t, &a_t_, sizeof(double));
+    cudaMemcpyToSymbol(tau, &tau_, sizeof(double));
+    cudaMemcpyToSymbol(hx, &hx_, sizeof(double));
+    cudaMemcpyToSymbol(hy, &hy_, sizeof(double));
+    cudaMemcpyToSymbol(hz, &hz_, sizeof(double));
     cudaMemcpyToSymbol(x_0, &x0, sizeof(int));
     cudaMemcpyToSymbol(y_0, &y0, sizeof(int));
     cudaMemcpyToSymbol(z_0, &z0, sizeof(int));
-    cudaMemcpyToSymbol(Lx, &Lx_, sizeof(float));
-    cudaMemcpyToSymbol(Ly, &Ly_, sizeof(float));
-    cudaMemcpyToSymbol(Lz, &Lz_, sizeof(float));
+    cudaMemcpyToSymbol(Lx, &Lx_, sizeof(double));
+    cudaMemcpyToSymbol(Ly, &Ly_, sizeof(double));
+    cudaMemcpyToSymbol(Lz, &Lz_, sizeof(double));
     //std::cout << "Device constants initialized\n";
 }
 
-__global__ void calculate_layer(float * grid0, float * grid1, float * grid2, int x, int y, int z, int n,
-                                int i1, int j1, int k1, int i2, int j2, int k2, float * abs_errs, float * rel_errs) {
+__global__ void calculate_layer(double * grid0, double * grid1, double * grid2, int x, int y, int z, int n,
+                                int i1, int j1, int k1, int i2, int j2, int k2, double * abs_errs, double * rel_errs) {
     // x, y, z - dimensions of the grid
     // i1, ..., i2, ... - start and end indices
     int i, j, k;
@@ -32,24 +32,24 @@ __global__ void calculate_layer(float * grid0, float * grid1, float * grid2, int
     i = idx / (y * z);
     if(i >= i1 && i <= i2 && j >= j1 && j <= j2 && k >= k1 && k <= k2) {
 
-        float u = 2*grid1[i*y*z + j*z + k] - grid0[i*y*z + j*z + k] + a2 * tau * tau * 
+        double u = 2*grid1[i*y*z + j*z + k] - grid0[i*y*z + j*z + k] + a2 * tau * tau * 
                     (
                         (grid1[(i+1)*y*z + j*z + k] + grid1[(i-1)*y*z + j*z + k] - 2*grid1[i*y*z + j*z + k])/(hx*hx) +
                         (grid1[i*y*z + (j+1)*z + k] + grid1[i*y*z + (j-1)*z + k] - 2*grid1[i*y*z + j*z + k])/(hy*hy) +
                         (grid1[i*y*z + j*z + (k+1)] + grid1[i*y*z + j*z + (k-1)] - 2*grid1[i*y*z + j*z + k])/(hz*hz)
                     );
         grid2[i*y*z + j*z + k] = u;
-        float f = cosf(a_t*n*tau + 2*PI) * sinf(2*PI*hx*(i-1+x_0)/Lx) * sinf(PI*hy*(j-1+y_0)/Ly) * sinf(PI*hz*(k-1+z_0)/Lz);
-        float abs_error = fabsf(u - f);
-        float rel_error = abs_error / fabsf(f);
+        double f = cos(a_t*n*tau + 2*PI) * sin(2*PI*hx*(i-1+x_0)/Lx) * sin(PI*hy*(j-1+y_0)/Ly) * sin(PI*hz*(k-1+z_0)/Lz);
+        double abs_error = fabs(u - f);
+        double rel_error = abs_error / fabs(f);
         abs_errs[i*y*z + j*z + k] = abs_error;
         rel_errs[i*y*z + j*z + k] = rel_error;
     }
 }
 
 
-__global__ void calculate_max_errors(float * abs_errors, float * rel_errors, int x, int y, int z,
-                                    float * block_abs_errors, float * block_rel_errors)
+__global__ void calculate_max_errors(double * abs_errors, double * rel_errors, int x, int y, int z,
+                                    double * block_abs_errors, double * block_rel_errors)
 {
     // calculates max errors in the block ([blockIdx.x * blockDim.x, (blockIdx.x + 1) * blockDim.x)))
     int total_size = x*y*z; // 343
@@ -58,8 +58,8 @@ __global__ void calculate_max_errors(float * abs_errors, float * rel_errors, int
     if(idx >= total_size) return;
     for(int stride = 1; stride < size; stride *= 2) {
         if(threadIdx.x % (2*stride) == 0 && idx + stride < total_size) {
-            abs_errors[idx] = fmaxf(abs_errors[idx], abs_errors[idx + stride]);
-            rel_errors[idx] = fmaxf(rel_errors[idx], rel_errors[idx + stride]);
+            abs_errors[idx] = fmax(abs_errors[idx], abs_errors[idx + stride]);
+            rel_errors[idx] = fmax(rel_errors[idx], rel_errors[idx + stride]);
         }
         __syncthreads();
     }
@@ -69,28 +69,28 @@ __global__ void calculate_max_errors(float * abs_errors, float * rel_errors, int
     }
 }
 
-void calculate_errors(float * abs_errs, float * rel_errs, int x, int y, int z, float * result, cudaStream_t stream) {
-    float * blocks_max_abs;
-    float * blocks_max_rel;
-    float * abs_res;
-    float * rel_res;
+void calculate_errors(double * abs_errs, double * rel_errs, int x, int y, int z, double * result, cudaStream_t stream) {
+    double * blocks_max_abs;
+    double * blocks_max_rel;
+    double * abs_res;
+    double * rel_res;
     int block_size = 512;
     int size = x*y*z;
     int blocks = (size + block_size - 1) / block_size;
     dim3 gridDim(blocks);
     dim3 blockDim(block_size);
     //std::cout << blocks << " " << block_size << " " << size << "\n";
-    cudaMalloc(&blocks_max_abs, blocks*sizeof(float));
-    cudaMalloc(&blocks_max_rel, blocks*sizeof(float));
-    cudaMemset(blocks_max_abs, 0.0, blocks*sizeof(float));
-    cudaMemset(blocks_max_rel, 0.0, blocks*sizeof(float));
-    cudaMallocHost(&abs_res, blocks*sizeof(float));
-    cudaMallocHost(&rel_res, blocks*sizeof(float));
+    cudaMalloc(&blocks_max_abs, blocks*sizeof(double));
+    cudaMalloc(&blocks_max_rel, blocks*sizeof(double));
+    cudaMemset(blocks_max_abs, 0.0, blocks*sizeof(double));
+    cudaMemset(blocks_max_rel, 0.0, blocks*sizeof(double));
+    cudaMallocHost(&abs_res, blocks*sizeof(double));
+    cudaMallocHost(&rel_res, blocks*sizeof(double));
     calculate_max_errors<<<gridDim, blockDim, 0, stream>>>(abs_errs, rel_errs, x, y, z, blocks_max_abs, blocks_max_rel);
     cudaStreamSynchronize(stream);
-    cudaMemcpy(abs_res, blocks_max_abs, blocks*sizeof(float), cudaMemcpyDeviceToHost);
-    cudaMemcpy(rel_res, blocks_max_rel, blocks*sizeof(float), cudaMemcpyDeviceToHost);
-    float abs_err = 0.0, rel_err = 0.0;
+    cudaMemcpy(abs_res, blocks_max_abs, blocks*sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(rel_res, blocks_max_rel, blocks*sizeof(double), cudaMemcpyDeviceToHost);
+    double abs_err = 0.0, rel_err = 0.0;
     for(int i = 0; i < blocks; i++) {
         if(abs_res[i] > abs_err) abs_err = abs_res[i];
         if(rel_res[i] > rel_err) rel_err = rel_res[i];
@@ -100,7 +100,7 @@ void calculate_errors(float * abs_errs, float * rel_errs, int x, int y, int z, f
     cudaFree(blocks_max_abs); cudaFree(blocks_max_rel);
 }
 
-__global__ void copy_to_matrices(float * grid, float * matrix1, float * matrix2, int x, int y, int z,
+__global__ void copy_to_matrices(double * grid, double * matrix1, double * matrix2, int x, int y, int z,
                                     int dim, int start, int end) {
     // x, y, z = X+2, Y+2, Z+2
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -133,7 +133,7 @@ __global__ void copy_to_matrices(float * grid, float * matrix1, float * matrix2,
     }
 }
 
-void call_copy_to_matrices(float * grid, float * matrix1, float * matrix2, int x, int y, int z,
+void call_copy_to_matrices(double * grid, double * matrix1, double * matrix2, int x, int y, int z,
                             int dim, int start, int end, cudaStream_t stream) {
     int block_size = 512;
     int size;
@@ -146,7 +146,7 @@ void call_copy_to_matrices(float * grid, float * matrix1, float * matrix2, int x
     copy_to_matrices<<<gridDim, blockDim, 0, stream>>>(grid, matrix1, matrix2, x, y, z, dim, start, end);
 }
 
-__global__ void copy_to_grid(float * grid, float * matrix, int x, int y, int z,
+__global__ void copy_to_grid(double * grid, double * matrix, int x, int y, int z,
                             int dim, int index) {
     // x, y, z = X+2, Y+2, Z+2
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -172,7 +172,7 @@ __global__ void copy_to_grid(float * grid, float * matrix, int x, int y, int z,
     }
 }
 
-void call_copy_to_grid(float * grid, float * matrix, int x, int y, int z,
+void call_copy_to_grid(double * grid, double * matrix, int x, int y, int z,
                         int dim, int index, cudaStream_t stream) {
     int block_size = 512;
     int size;
@@ -185,23 +185,23 @@ void call_copy_to_grid(float * grid, float * matrix, int x, int y, int z,
     copy_to_grid<<<gridDim, blockDim, 0, stream>>>(grid, matrix, x, y, z, dim, index);
 }
 
-__global__ void layer0(float * grid0, int x, int y, int z, float * abs_errs, float * rel_errs) {
+__global__ void layer0(double * grid0, int x, int y, int z, double * abs_errs, double * rel_errs) {
     int i, j, k;
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     k = idx % z;
     j = (idx / z) % y;
     i = idx / (y * z);
     if(i >= 1 && i <= x-2 && j >= 1 && j <= y-2 && k >= 1 && k <= z-2) {
-        float u = cosf(0.0 + 2*PI) * sinf(2*PI*hx*(i-1+x_0)/Lx) * sinf(PI*hy*(j-1+y_0)/Ly) * sinf(PI*hz*(k-1+z_0)/Lz);
+        double u = cos(0.0 + 2*PI) * sin(2*PI*hx*(i-1+x_0)/Lx) * sin(PI*hy*(j-1+y_0)/Ly) * sin(PI*hz*(k-1+z_0)/Lz);
         grid0[i*y*z + j*z + k] = u;
         abs_errs[i*y*z + j*z + k] = 0.0;
         rel_errs[i*y*z + j*z + k] = 0.0;
     }
 }
 
-__global__ void layer1(float * grid0, float * grid1, int x, int y, int z,
+__global__ void layer1(double * grid0, double * grid1, int x, int y, int z,
                         int i1, int j1, int k1, int i2, int j2, int k2,
-                        float * abs_errs, float * rel_errs)
+                        double * abs_errs, double * rel_errs)
 {
     int i, j, k;
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -209,23 +209,23 @@ __global__ void layer1(float * grid0, float * grid1, int x, int y, int z,
     j = (idx / z) % y;
     i = idx / (y * z);
     if(i >= i1 && i <= i2 && j >= j1 && j <= j2 && k >= k1 && k <= k2) {
-        float u = grid0[i*y*z + j*z + k] + a2*tau*tau*0.5*(
+        double u = grid0[i*y*z + j*z + k] + a2*tau*tau*0.5*(
             (grid0[(i+1)*y*z + j*z + k] + grid0[(i-1)*y*z + j*z + k] - 2*grid0[i*y*z + j*z + k])/(hx*hx) +
             (grid0[i*y*z + (j+1)*z + k] + grid0[i*y*z + (j-1)*z + k] - 2*grid0[i*y*z + j*z + k])/(hy*hy) +
             (grid0[i*y*z + j*z + (k+1)] + grid0[i*y*z + j*z + (k-1)] - 2*grid0[i*y*z + j*z + k])/(hz*hz)
         );
         grid1[i*y*z + j*z + k] = u;
-        float f = cosf(a_t*1*tau + 2*PI) * sinf(2*PI*hx*(i-1+x_0)/Lx) * sinf(PI*hy*(j-1+y_0)/Ly) * sinf(PI*hz*(k-1+z_0)/Lz);
-        float abs_error = fabsf(u - f);
-        float rel_error = abs_error / fabsf(f);
+        double f = cos(a_t*1*tau + 2*PI) * sin(2*PI*hx*(i-1+x_0)/Lx) * sin(PI*hy*(j-1+y_0)/Ly) * sin(PI*hz*(k-1+z_0)/Lz);
+        double abs_error = fabs(u - f);
+        double rel_error = abs_error / fabs(f);
         abs_errs[i*y*z + j*z + k] = abs_error;
         rel_errs[i*y*z + j*z + k] = rel_error;
     }
 }
 
-void call_calculate_layer(float * grid0, float * grid1, float * grid2, int x, int y, int z, int n,
+void call_calculate_layer(double * grid0, double * grid1, double * grid2, int x, int y, int z, int n,
                         int i1, int j1, int k1, int i2, int j2, int k2,
-                        float * abs_errs, float * rel_errs, cudaStream_t stream)
+                        double * abs_errs, double * rel_errs, cudaStream_t stream)
 {
     int block_size = 512;
     int size = x*y*z;
@@ -241,7 +241,7 @@ void call_calculate_layer(float * grid0, float * grid1, float * grid2, int x, in
     }
 }
 
-__global__ void prepare_layer(float * grid0, float * grid1, float * grid2, int n, int x, int y, int z,
+__global__ void prepare_layer(double * grid0, double * grid1, double * grid2, int n, int x, int y, int z,
                                 int j1, int k1, int j2, int k2, unsigned int b)
 {
     int j, k;
@@ -274,7 +274,7 @@ __global__ void prepare_layer(float * grid0, float * grid1, float * grid2, int n
     }
 }
 
-void call_prepare_layer(float * grid0, float * grid1, float * grid2, int n, int x, int y, int z,
+void call_prepare_layer(double * grid0, double * grid1, double * grid2, int n, int x, int y, int z,
                                 int j1, int k1, int j2, int k2, unsigned int b, cudaStream_t stream)
 {
     int block_size = 512;

@@ -26,32 +26,32 @@
         }                                                                                   \
     }
 
-void call_copy_to_matrices(float * grid, float * matrix1, float * matrix2, int x, int y, int z,
+void call_copy_to_matrices(double * grid, double * matrix1, double * matrix2, int x, int y, int z,
                         int dim, int start, int end, cudaStream_t stream);
 
-void call_copy_to_grid(float * grid, float * matrix, int x, int y, int z,
+void call_copy_to_grid(double * grid, double * matrix, int x, int y, int z,
                         int dim, int index, cudaStream_t stream);
-void init_device_constants(float a2_, float a_t_, float tau_, float hx_, float hy_, float hz_, float Lx_, float Ly_, float Lz_,  int x0, int y0, int z0, cudaStream_t stream);
+void init_device_constants(double a2_, double a_t_, double tau_, double hx_, double hy_, double hz_, double Lx_, double Ly_, double Lz_,  int x0, int y0, int z0, cudaStream_t stream);
 
-void call_calculate_start(float * grid0, float * grid1, int x, int y, int z, int n,
+void call_calculate_start(double * grid0, double * grid1, int x, int y, int z, int n,
                         int i1, int j1, int k1, int i2, int j2, int k2,
-                        float * abs_errs, float * rel_errs, cudaStream_t stream);
+                        double * abs_errs, double * rel_errs, cudaStream_t stream);
 
-void calculate_errors(float * abs_errs, float * rel_errs, int x, int y, int z, float * result, cudaStream_t stream);
+void calculate_errors(double * abs_errs, double * rel_errs, int x, int y, int z, double * result, cudaStream_t stream);
 
-void call_calculate_layer(float * grid0, float * grid1, float * grid2, int x, int y, int z, int n,
+void call_calculate_layer(double * grid0, double * grid1, double * grid2, int x, int y, int z, int n,
                         int i1, int j1, int k1, int i2, int j2, int k2,
-                        float * abs_errs, float * rel_errs, cudaStream_t stream);
+                        double * abs_errs, double * rel_errs, cudaStream_t stream);
 
-void call_prepare_layer(float * grid0, float * grid1, float * grid2, int n, int x, int y, int z,
+void call_prepare_layer(double * grid0, double * grid1, double * grid2, int n, int x, int y, int z,
                         int j1, int k1, int j2, int k2, unsigned int b, cudaStream_t stream);
 
-float Lx, Ly, Lz, a_t, a2, T;
-float tau, hx, hy, hz;
+double Lx, Ly, Lz, a_t, a2, T;
+double tau, hx, hy, hz;
 
 unsigned long Np;
 
-const float PI =  3.1415926535;
+const double PI =  3.14159265358979323846;
 
 float total_exchange_time = 0.0;
 float total_mpi_exchange_time = 0.0;
@@ -75,45 +75,45 @@ class Matrix {
 private:
     int x, y;
 public:
-    float * array_h;
-    float * array_d;
+    double * array_h;
+    double * array_d;
     Matrix() {}
 
     void init_device(int x_, int y_) {
         x = x_;
         y = y_;
-        cudaMalloc(&array_d, x*y*sizeof(float));
-        cudaMemsetAsync(array_d, 0, x*y*sizeof(float), stream);
+        cudaMalloc(&array_d, x*y*sizeof(double));
+        cudaMemsetAsync(array_d, 0, x*y*sizeof(double), stream);
     }
     
     void init_host(int x_, int y_) {
         x = x_;
         y = y_;
-        cudaMallocHost(&array_h, x*y*sizeof(float));
+        cudaMallocHost(&array_h, x*y*sizeof(double));
         for(unsigned i = 0; i < x*y; i++) array_h[i] = 0.0;
     }
 
     void init(int x_, int y_) {
         x = x_;
         y = y_;
-        cudaMallocHost(&array_h, x*y*sizeof(float));
-        memset(array_h, 0, x*y*sizeof(float));
-        cudaMalloc(&array_d, x*y*sizeof(float));
-        cudaMemsetAsync(array_d, 0, x*y*sizeof(float), stream);
+        cudaMallocHost(&array_h, x*y*sizeof(double));
+        memset(array_h, 0, x*y*sizeof(double));
+        cudaMalloc(&array_d, x*y*sizeof(double));
+        cudaMemsetAsync(array_d, 0, x*y*sizeof(double), stream);
     }
 
     void copy_to_host() {
-        cudaMemcpyAsync(array_h, array_d, x*y*sizeof(float), cudaMemcpyDeviceToHost, stream);
+        cudaMemcpyAsync(array_h, array_d, x*y*sizeof(double), cudaMemcpyDeviceToHost, stream);
     }
 
     void copy_to_device() {
-        cudaMemcpyAsync(array_d, array_h, x*y*sizeof(float), cudaMemcpyHostToDevice, stream);
+        cudaMemcpyAsync(array_d, array_h, x*y*sizeof(double), cudaMemcpyHostToDevice, stream);
     }
 
-    float * get_ptr_host() {
+    double * get_ptr_host() {
         return array_h;
     }
-    float * get_ptr_device() {
+    double * get_ptr_device() {
         return array_d;
     }
 
@@ -125,8 +125,8 @@ public:
 
 class Grid { // 3D grid
 private:
-    float * array_h;
-    float * array_d;
+    double * array_h;
+    double * array_d;
     int x, y, z;
 public:
     Grid() {
@@ -137,37 +137,37 @@ public:
         x = x_;
         y = y_;
         z = z_;
-        cudaMalloc(&array_d, x*y*z*sizeof(float));
-        cudaMemsetAsync(array_d, 0.0, x*y*z*sizeof(float), stream);
+        cudaMalloc(&array_d, x*y*z*sizeof(double));
+        cudaMemsetAsync(array_d, 0.0, x*y*z*sizeof(double), stream);
     }
 
-    float * get_ptr_device() {
+    double * get_ptr_device() {
         return array_d;
     }
 
-    void memset_device(float s) {
-        cudaMemsetAsync(array_d, s, x*y*z*sizeof(float), stream);
+    void memset_device(double s) {
+        cudaMemsetAsync(array_d, s, x*y*z*sizeof(double), stream);
     }
 
     void init_grid(int x_, int y_, int z_) {
         x = x_;
         y = y_;
         z = z_;
-        cudaMallocHost(&array_h, x * y * z * sizeof(float));
-        memset(array_h, 0, x*y*z*sizeof(float));
+        cudaMallocHost(&array_h, x * y * z * sizeof(double));
+        memset(array_h, 0, x*y*z*sizeof(double));
     }
 
-    float get(int i, int j, int k) {
+    double get(int i, int j, int k) {
         return array_h[i*y*z + j*z + k];
     }
 
-    void set(int i, int j, int k, float val) {
+    void set(int i, int j, int k, double val) {
         array_h[i*y*z + j*z + k] = val;
     }
 
     // host only
-    float laplace(int i, int j, int k, int x1, int y1, int z1, int x2, int y2, int z2) {
-        float ans = 0.0;
+    double laplace(int i, int j, int k, int x1, int y1, int z1, int x2, int y2, int z2) {
+        double ans = 0.0;
         ans += (array_h[x1*y*z + j*z + k] - 2*array_h[i*y*z + j*z + k] + array_h[x2*y*z + j*z + k])/(hx*hx);
         ans += (array_h[i*y*z + y1*z + k] - 2*array_h[i*y*z + j*z + k] + array_h[i*y*z + y2*z + k])/(hy*hy);
         ans += (array_h[i*y*z + j*z + z1] - 2*array_h[i*y*z + j*z + k] + array_h[i*y*z + j*z + z2])/(hz*hz);
@@ -175,7 +175,7 @@ public:
     }
 
     void copy_to_host() { // not used
-        cudaMemcpy(array_h, array_d, x*y*z*sizeof(float), cudaMemcpyDeviceToHost);
+        cudaMemcpy(array_h, array_d, x*y*z*sizeof(double), cudaMemcpyDeviceToHost);
     }
 
     void print_layer(int t) {
@@ -201,9 +201,9 @@ Grid grids[3];
 Grid abs_errors;
 Grid rel_errors;
 
-std::vector<float> max_abs_errors;
-std::vector<float> max_rel_errors;
-float errors[2] = {0.0, 0.0};
+std::vector<double> max_abs_errors;
+std::vector<double> max_rel_errors;
+double errors[2] = {0.0, 0.0};
 
 MPI_Comm cart_comm;
 MPI_Comm local_comm;
@@ -239,53 +239,53 @@ void exchange(int n) {
     cudaEventElapsedTime(&t, exchange_started, exchange_finished);
     total_exchange_time += t;
 
-    float start = MPI_Wtime();
+    double start = MPI_Wtime();
     if(up_rank >= 0 && down_rank >= 0) {
-        MPI_Sendrecv(up1.array_h, (Z+2)*(Y+2), MPI_FLOAT, up_rank, 1, 
-                     down.array_h, (Z+2)*(Y+2), MPI_FLOAT, down_rank, 1, cart_comm, &status);
-        MPI_Sendrecv(down1.array_h, (Z+2)*(Y+2), MPI_FLOAT, down_rank, 2, 
-                     up.array_h, (Z+2)*(Y+2), MPI_FLOAT, up_rank, 2, cart_comm, &status);
+        MPI_Sendrecv(up1.array_h, (Z+2)*(Y+2), MPI_DOUBLE, up_rank, 1, 
+                     down.array_h, (Z+2)*(Y+2), MPI_DOUBLE, down_rank, 1, cart_comm, &status);
+        MPI_Sendrecv(down1.array_h, (Z+2)*(Y+2), MPI_DOUBLE, down_rank, 2, 
+                     up.array_h, (Z+2)*(Y+2), MPI_DOUBLE, up_rank, 2, cart_comm, &status);
     }
     // left-right
     if(right_rank >= 0 && left_rank >= 0) {
-        MPI_Sendrecv(right1.array_h, (Z+2)*(X+2), MPI_FLOAT, right_rank, 3, 
-                     ::left.array_h, (Z+2)*(X+2), MPI_FLOAT, left_rank, 3, cart_comm, &status);
+        MPI_Sendrecv(right1.array_h, (Z+2)*(X+2), MPI_DOUBLE, right_rank, 3, 
+                     ::left.array_h, (Z+2)*(X+2), MPI_DOUBLE, left_rank, 3, cart_comm, &status);
     } else if (right_rank >= 0) {
-        MPI_Send(right1.array_h, (Z+2)*(X+2), MPI_FLOAT, right_rank, 3, cart_comm);
+        MPI_Send(right1.array_h, (Z+2)*(X+2), MPI_DOUBLE, right_rank, 3, cart_comm);
     } else if(left_rank >= 0) {
-        MPI_Recv(::left.array_h, (Z+2)*(X+2), MPI_FLOAT, left_rank, 3, cart_comm, &status);
+        MPI_Recv(::left.array_h, (Z+2)*(X+2), MPI_DOUBLE, left_rank, 3, cart_comm, &status);
     }
     //std::cout << "proc " << rank << " ex " << n << " left-right exchange complete\n";
     // right-left
     if(right_rank >= 0 && left_rank >= 0) {
-        MPI_Sendrecv(left1.array_h, (Z+2)*(X+2), MPI_FLOAT, left_rank, 4, 
-                     ::right.array_h, (Z+2)*(X+2), MPI_FLOAT, right_rank, 4, cart_comm, &status);
+        MPI_Sendrecv(left1.array_h, (Z+2)*(X+2), MPI_DOUBLE, left_rank, 4, 
+                     ::right.array_h, (Z+2)*(X+2), MPI_DOUBLE, right_rank, 4, cart_comm, &status);
     } else if (left_rank >= 0) {
-        MPI_Send(left1.array_h, (Z+2)*(X+2), MPI_FLOAT, left_rank, 4, cart_comm);
+        MPI_Send(left1.array_h, (Z+2)*(X+2), MPI_DOUBLE, left_rank, 4, cart_comm);
     } else if(right_rank >= 0) {
-        MPI_Recv(::right.array_h, (Z+2)*(X+2), MPI_FLOAT, right_rank, 4, cart_comm, &status);
+        MPI_Recv(::right.array_h, (Z+2)*(X+2), MPI_DOUBLE, right_rank, 4, cart_comm, &status);
     }
     //std::cout << "proc " << rank << " ex " << n << " right-left exchange complete\n";
     // back-front
     if(front_rank >= 0 && back_rank >= 0) {
-        MPI_Sendrecv(front1.array_h, (Y+2)*(X+2), MPI_FLOAT, front_rank, 5, 
-                     back.array_h, (Y+2)*(X+2), MPI_FLOAT, back_rank, 5, cart_comm, &status);
+        MPI_Sendrecv(front1.array_h, (Y+2)*(X+2), MPI_DOUBLE, front_rank, 5, 
+                     back.array_h, (Y+2)*(X+2), MPI_DOUBLE, back_rank, 5, cart_comm, &status);
     } else if (front_rank >= 0) {
-        MPI_Send(front1.array_h, (Y+2)*(X+2), MPI_FLOAT, front_rank, 5, cart_comm);
+        MPI_Send(front1.array_h, (Y+2)*(X+2), MPI_DOUBLE, front_rank, 5, cart_comm);
     } else if(back_rank >= 0) {
-        MPI_Recv(back.array_h, (Y+2)*(X+2), MPI_FLOAT, back_rank, 5, cart_comm, &status);
+        MPI_Recv(back.array_h, (Y+2)*(X+2), MPI_DOUBLE, back_rank, 5, cart_comm, &status);
     }
     //std::cout << "proc " << rank << " ex " << n << " back-front exchange complete\n";
     // front-back
     if(front_rank >= 0 && back_rank >= 0) {
-        MPI_Sendrecv(back1.array_h, (Y+2)*(X+2), MPI_FLOAT, back_rank, 6, 
-                     front.array_h, (Y+2)*(X+2), MPI_FLOAT, front_rank, 6, cart_comm, &status);
+        MPI_Sendrecv(back1.array_h, (Y+2)*(X+2), MPI_DOUBLE, back_rank, 6, 
+                     front.array_h, (Y+2)*(X+2), MPI_DOUBLE, front_rank, 6, cart_comm, &status);
     } else if (back_rank >= 0) {
-        MPI_Send(back1.array_h, (Y+2)*(X+2), MPI_FLOAT, back_rank, 6, cart_comm);
+        MPI_Send(back1.array_h, (Y+2)*(X+2), MPI_DOUBLE, back_rank, 6, cart_comm);
     } else if(front_rank >= 0) {
-        MPI_Recv(front.array_h, (Y+2)*(X+2), MPI_FLOAT, front_rank, 6, cart_comm, &status);
+        MPI_Recv(front.array_h, (Y+2)*(X+2), MPI_DOUBLE, front_rank, 6, cart_comm, &status);
     }
-    float end = MPI_Wtime();
+    double end = MPI_Wtime();
     total_mpi_exchange_time += (end - start)*1000;
     //std::cout << "proc " << rank << " ex " << n << " front-back exchange complete\n";
     //std::cout << "proc " << rank << " ex " << n << " side exchanges complete\n";
@@ -332,7 +332,7 @@ void calculate_start() { // начальные значения
     rel_errors.memset_device(0.0);
     cudaStreamSynchronize(stream);
 
-    //if(rank == 0) std::cout << "calculating layer " << 1 << std::endl;
+    if(rank == 0) std::cout << "calculating layer " << 1 << std::endl;
     // n = 1
     prepare_layer(1);
     //#pragma omp parallel for num_threads(Np) shared(num_sol)
@@ -379,7 +379,7 @@ void calculate_num_sol() {
     cudaEventRecord(started, stream);
     calculate_start();
     for(int n = 2; n <= timesteps; n++) {
-
+        if(rank == 0) std::cout << "calculating layer " << n << std::endl;
         prepare_layer(n);
 
         int x = coords[0] == dim[0]-1 ? X-1 : X,
@@ -418,10 +418,10 @@ void calculate_num_sol() {
     if(rank == 0) {
         out << "numerical solution calculated in " << milliseconds << "ms" << std::endl;
     }
-    std::vector<float> global_max_abs_errors(timesteps + 1);
-    std::vector<float> global_max_rel_errors(timesteps + 1);
-    MPI_Reduce(max_abs_errors.data(), global_max_abs_errors.data(), timesteps + 1, MPI_FLOAT, MPI_MAX, 0, cart_comm);
-    MPI_Reduce(max_rel_errors.data(), global_max_rel_errors.data(), timesteps + 1, MPI_FLOAT, MPI_MAX, 0, cart_comm);
+    std::vector<double> global_max_abs_errors(timesteps + 1);
+    std::vector<double> global_max_rel_errors(timesteps + 1);
+    MPI_Reduce(max_abs_errors.data(), global_max_abs_errors.data(), timesteps + 1, MPI_DOUBLE, MPI_MAX, 0, cart_comm);
+    MPI_Reduce(max_rel_errors.data(), global_max_rel_errors.data(), timesteps + 1, MPI_DOUBLE, MPI_MAX, 0, cart_comm);
     if(rank == 0) {
         for(int n = 0; n <= timesteps; n++) {
             out << "max abs and rel errors on layer " << n << ": " << global_max_abs_errors[n] << " " << global_max_rel_errors[n] << std::endl;

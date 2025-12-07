@@ -15,51 +15,51 @@
 
 
 
-float Lx, Ly, Lz, a_t, a2, T;
-float tau, hx, hy, hz;
+double Lx, Ly, Lz, a_t, a2, T;
+double tau, hx, hy, hz;
 
 unsigned long Np;
 
-const float PI =  3.1415926535;
+const double PI =  3.1415926535;
 
-float max_abs_error = -100.0;
-float max_rel_error = -100.0;
+double max_abs_error = -100.0;
+double max_rel_error = -100.0;
 
 int N = 32;
 int X, Y, Z;
 int x_0, y_0, z_0;
 int timesteps;
 
-float total_exchange_time = 0.0;
-float total_loop_time = 0.0;
+double total_exchange_time = 0.0;
+double total_loop_time = 0.0;
 
 class Matrix {
 private:
     
     int x, y;
 public:
-    float * array;
+    double * array;
     Matrix() {}
     Matrix(int x_, int y_) {
         x = x_;
         y = y_;
-        array = new float[x*y];
+        array = new double[x*y];
         for(unsigned i = 0; i < x*y; i++) array[i] = 0.0;
     }
     void init(int x_, int y_) {
         x = x_;
         y = y_;
-        array = new float[x*y];
+        array = new double[x*y];
         for(unsigned i = 0; i < x*y; i++) array[i] = 0.0;
     }
-    float * get_ptr() {
+    double * get_ptr() {
         return array;
     }
 };
 
 class Grid { // 3D grid
 private:
-    float * array;
+    double * array;
     int x, y, z;
 public:
     Grid() {
@@ -70,7 +70,7 @@ public:
         x = x_;
         y = y_;
         z = z_;
-        array = new float[x*y*z];
+        array = new double[x*y*z];
         for(unsigned i = 0; i < x*y*z; i++) array[i] = 0.0;
     }
 
@@ -78,7 +78,7 @@ public:
         // TODO
     }
 
-    float * get_ptr_cuda() {
+    double * get_ptr_cuda() {
         // TODO
         return nullptr;
     }
@@ -87,22 +87,22 @@ public:
         x = x_;
         y = y_;
         z = z_;
-        array = new float[x*y*z];
+        array = new double[x*y*z];
         for(unsigned i = 0; i < x*y*z; i++) array[i] = 0.0;
     }
 
-    float get(int i, int j, int k) {
+    double get(int i, int j, int k) {
         return array[i*y*z + j*z + k];
     }
 
-    void set(int i, int j, int k, float val) {
+    void set(int i, int j, int k, double val) {
         //cout << "set " << t << i << j << k << endl;
         array[i*y*z + j*z + k] = val;
     }
 
 
-    float laplace(int i, int j, int k, int x1, int y1, int z1, int x2, int y2, int z2) {
-        float ans = 0.0;
+    double laplace(int i, int j, int k, int x1, int y1, int z1, int x2, int y2, int z2) {
+        double ans = 0.0;
         // array[n*size*size*size + i*size*size + j*size + k]
         ans += (array[x1*y*z + j*z + k] - 2*array[i*y*z + j*z + k] + array[x2*y*z + j*z + k])/(hx*hx);
         ans += (array[i*y*z + y1*z + k] - 2*array[i*y*z + j*z + k] + array[i*y*z + y2*z + k])/(hy*hy);
@@ -133,8 +133,8 @@ Grid grids[3];
 Grid cur_prec_sol; // sol[t][x][y][z]
 Grid cur_abs_error;
 Grid cur_rel_error;
-std::vector<float> max_abs_errors;
-std::vector<float> max_rel_errors;
+std::vector<double> max_abs_errors;
+std::vector<double> max_rel_errors;
 
 MPI_Comm cart_comm;
 MPI_Comm local_comm;
@@ -147,7 +147,7 @@ int nprocs, rank;
 
 std::ofstream out;
 
-float an_sol(float t, float x, float y, float z) {
+double an_sol(double t, double x, double y, double z) {
     return sin(2*PI*x/Lx)*sin(PI*y/Ly)*sin(PI*z/Lz)*cos(a_t*t + 2*PI);
 }
 
@@ -156,7 +156,7 @@ float an_sol(float t, float x, float y, float z) {
 
 void prepare_layer(int n) {
     // y, z
-    float loop_start = MPI_Wtime();
+    double loop_start = MPI_Wtime();
     for(int i = 1; i <= X; i++) {
         for(int j = 1; j <= Y; j++) {
             if(back_rank < 0) grids[n % 3].set(i, j, 1, 0.0);
@@ -174,7 +174,7 @@ void prepare_layer(int n) {
             if(coords[0] == 0) grids[n % 3].set(1, j, k, (n > 1 ? 2 : 1)*grids[(n + 2) % 3].get(1, j, k) - (n > 1 ? grids[(n + 1) % 3].get(1, j, k) : 0) + (n > 1 ? 1.0 : 0.5)*a2*tau*tau*grids[(n+2) % 3].laplace(1, j, k, 0, j-1, k-1, 2, j+1, k+1));
         }
     }
-    float loop_duration = MPI_Wtime() - loop_start;
+    double loop_duration = MPI_Wtime() - loop_start;
     total_loop_time += loop_duration;
 }
 
@@ -197,46 +197,46 @@ void exchange(int n) {
             left1.array[i*(Z+2) + k] = grids[n % 3].get(i, 1, k);
         }
     }
-    float exchange_start = MPI_Wtime();
+    double exchange_start = MPI_Wtime();
     if(up_rank >= 0 && down_rank >= 0) {
-        MPI_Sendrecv(up1.array, (Z+2)*(Y+2), MPI_FLOAT, up_rank, 1, 
-                     down.array, (Z+2)*(Y+2), MPI_FLOAT, down_rank, 1, cart_comm, &status);
-        MPI_Sendrecv(down1.array, (Z+2)*(Y+2), MPI_FLOAT, down_rank, 2, 
-                     up.array, (Z+2)*(Y+2), MPI_FLOAT, up_rank, 2, cart_comm, &status);
+        MPI_Sendrecv(up1.array, (Z+2)*(Y+2), MPI_DOUBLE, up_rank, 1, 
+                     down.array, (Z+2)*(Y+2), MPI_DOUBLE, down_rank, 1, cart_comm, &status);
+        MPI_Sendrecv(down1.array, (Z+2)*(Y+2), MPI_DOUBLE, down_rank, 2, 
+                     up.array, (Z+2)*(Y+2), MPI_DOUBLE, up_rank, 2, cart_comm, &status);
     }
     if(right_rank >= 0 && left_rank >= 0) {
-        MPI_Sendrecv(right1.array, (Z+2)*(X+2), MPI_FLOAT, right_rank, 3, 
-                     ::left.array, (Z+2)*(X+2), MPI_FLOAT, left_rank, 3, cart_comm, &status);
+        MPI_Sendrecv(right1.array, (Z+2)*(X+2), MPI_DOUBLE, right_rank, 3, 
+                     ::left.array, (Z+2)*(X+2), MPI_DOUBLE, left_rank, 3, cart_comm, &status);
     } else if (right_rank >= 0) {
-        MPI_Send(right1.array, (Z+2)*(X+2), MPI_FLOAT, right_rank, 3, cart_comm);
+        MPI_Send(right1.array, (Z+2)*(X+2), MPI_DOUBLE, right_rank, 3, cart_comm);
     } else if(left_rank >= 0) {
-        MPI_Recv(::left.array, (Z+2)*(X+2), MPI_FLOAT, left_rank, 3, cart_comm, &status);
+        MPI_Recv(::left.array, (Z+2)*(X+2), MPI_DOUBLE, left_rank, 3, cart_comm, &status);
     }
     if(right_rank >= 0 && left_rank >= 0) {
-        MPI_Sendrecv(left1.array, (Z+2)*(X+2), MPI_FLOAT, left_rank, 4, 
-                     ::right.array, (Z+2)*(X+2), MPI_FLOAT, right_rank, 4, cart_comm, &status);
+        MPI_Sendrecv(left1.array, (Z+2)*(X+2), MPI_DOUBLE, left_rank, 4, 
+                     ::right.array, (Z+2)*(X+2), MPI_DOUBLE, right_rank, 4, cart_comm, &status);
     } else if (left_rank >= 0) {
-        MPI_Send(left1.array, (Z+2)*(X+2), MPI_FLOAT, left_rank, 4, cart_comm);
+        MPI_Send(left1.array, (Z+2)*(X+2), MPI_DOUBLE, left_rank, 4, cart_comm);
     } else if(right_rank >= 0) {
-        MPI_Recv(::right.array, (Z+2)*(X+2), MPI_FLOAT, right_rank, 4, cart_comm, &status);
+        MPI_Recv(::right.array, (Z+2)*(X+2), MPI_DOUBLE, right_rank, 4, cart_comm, &status);
     }
     if(front_rank >= 0 && back_rank >= 0) {
-        MPI_Sendrecv(front1.array, (Y+2)*(X+2), MPI_FLOAT, front_rank, 5, 
-                     back.array, (Y+2)*(X+2), MPI_FLOAT, back_rank, 5, cart_comm, &status);
+        MPI_Sendrecv(front1.array, (Y+2)*(X+2), MPI_DOUBLE, front_rank, 5, 
+                     back.array, (Y+2)*(X+2), MPI_DOUBLE, back_rank, 5, cart_comm, &status);
     } else if (front_rank >= 0) {
-        MPI_Send(front1.array, (Y+2)*(X+2), MPI_FLOAT, front_rank, 5, cart_comm);
+        MPI_Send(front1.array, (Y+2)*(X+2), MPI_DOUBLE, front_rank, 5, cart_comm);
     } else if(back_rank >= 0) {
-        MPI_Recv(back.array, (Y+2)*(X+2), MPI_FLOAT, back_rank, 5, cart_comm, &status);
+        MPI_Recv(back.array, (Y+2)*(X+2), MPI_DOUBLE, back_rank, 5, cart_comm, &status);
     }
     if(front_rank >= 0 && back_rank >= 0) {
-        MPI_Sendrecv(back1.array, (Y+2)*(X+2), MPI_FLOAT, back_rank, 6, 
-                     front.array, (Y+2)*(X+2), MPI_FLOAT, front_rank, 6, cart_comm, &status);
+        MPI_Sendrecv(back1.array, (Y+2)*(X+2), MPI_DOUBLE, back_rank, 6, 
+                     front.array, (Y+2)*(X+2), MPI_DOUBLE, front_rank, 6, cart_comm, &status);
     } else if (back_rank >= 0) {
-        MPI_Send(back1.array, (Y+2)*(X+2), MPI_FLOAT, back_rank, 6, cart_comm);
+        MPI_Send(back1.array, (Y+2)*(X+2), MPI_DOUBLE, back_rank, 6, cart_comm);
     } else if(front_rank >= 0) {
-        MPI_Recv(front.array, (Y+2)*(X+2), MPI_FLOAT, front_rank, 6, cart_comm, &status);
+        MPI_Recv(front.array, (Y+2)*(X+2), MPI_DOUBLE, front_rank, 6, cart_comm, &status);
     }
-    float exchange_duration = MPI_Wtime() - exchange_start;
+    double exchange_duration = MPI_Wtime() - exchange_start;
     total_exchange_time += exchange_duration;
 
     // copy matrices
@@ -270,21 +270,21 @@ void exchange(int n) {
 
 void calculate_start() { // начальные значения
     // n = 0
-    float loop_start = MPI_Wtime();
+    double loop_start = MPI_Wtime();
     for(int i = 0; i <= X-1; i++) {
         for(int j = 0; j <= Y-1; j++) {
             for(int k = 0; k <= Z-1; k++) {
-                float u = an_sol(0, (i+x_0)*hx, (j+y_0)*hy, (k+z_0)*hz);
+                double u = an_sol(0, (i+x_0)*hx, (j+y_0)*hy, (k+z_0)*hz);
                 grids[0].set(i+1, j+1, k+1, u);
-                float f = an_sol(0, hx*(i+x_0), hy*(j+y_0), hz*(k+z_0));
-                float abs_error = fabs(u - f);
-                float rel_error = fabs((u - f) / f);
+                double f = an_sol(0, hx*(i+x_0), hy*(j+y_0), hz*(k+z_0));
+                double abs_error = fabs(u - f);
+                double rel_error = fabs((u - f) / f);
                 if(abs_error > max_abs_error) max_abs_error = abs_error;
                 if(rel_error > max_rel_error) max_rel_error = rel_error;
             }
         }
     }
-    float loop_duration = MPI_Wtime() - loop_start;
+    double loop_duration = MPI_Wtime() - loop_start;
     total_loop_time += loop_duration;
     max_abs_errors.push_back(max_abs_error);
     max_rel_errors.push_back(max_rel_error);
@@ -300,11 +300,11 @@ void calculate_start() { // начальные значения
     for(int i = coords[0] == 0 ? 2 : 1; i <= x; i++) {
         for(int j = coords[1] == 0 ? 2 : 1; j <= y; j++) {
             for(int k = coords[2] == 0 ? 2 : 1; k <= z; k++) {
-                float u = grids[0].get(i, j, k) + a2*tau*tau*0.5*grids[0].laplace(i, j, k, i-1, j-1, k-1, i+1, j+1, k+1);
+                double u = grids[0].get(i, j, k) + a2*tau*tau*0.5*grids[0].laplace(i, j, k, i-1, j-1, k-1, i+1, j+1, k+1);
                 grids[1].set(i, j, k, u);
-                float f = an_sol(tau, hx*(i-1+x_0), hy*(j-1+y_0), hz*(k-1+z_0));
-                float abs_error = fabs(u - f);
-                float rel_error = fabs((u - f) / f);
+                double f = an_sol(tau, hx*(i-1+x_0), hy*(j-1+y_0), hz*(k-1+z_0));
+                double abs_error = fabs(u - f);
+                double rel_error = fabs((u - f) / f);
                 if(abs_error > max_abs_error) max_abs_error = abs_error;
                 if(rel_error > max_rel_error) max_rel_error = rel_error;
             }
@@ -322,7 +322,7 @@ void calculate_start() { // начальные значения
 
 
 void calculate_num_sol() {
-    float start = MPI_Wtime();
+    double start = MPI_Wtime();
     calculate_start();
     for(int n = 2; n <= timesteps; n++) {
         max_abs_error = -100.0;
@@ -331,34 +331,34 @@ void calculate_num_sol() {
         int x = coords[0] == dim[0]-1 ? X-1 : X,
             y = coords[1] == dim[1]-1 ? Y-1 : Y,
             z = coords[2] == dim[2]-1 ? Z-1 : Z;
-        float loop_start = MPI_Wtime();
+        double loop_start = MPI_Wtime();
         for(int i = coords[0] == 0 ? 2 : 1; i <= x; i++) {
             for(int j = coords[1] == 0 ? 2 : 1; j <= y; j++) {
                 for(int k = coords[2] == 0 ? 2 : 1; k <= z; k++) {
-                    float u = 2*grids[(n+2) % 3].get(i, j, k) - grids[(n+1) % 3].get(i, j, k) + a2*tau*tau*grids[(n+2) % 3].laplace(i, j, k, i-1, j-1, k-1, i+1, j+1, k+1);
+                    double u = 2*grids[(n+2) % 3].get(i, j, k) - grids[(n+1) % 3].get(i, j, k) + a2*tau*tau*grids[(n+2) % 3].laplace(i, j, k, i-1, j-1, k-1, i+1, j+1, k+1);
                     grids[n % 3].set(i, j, k, u);
-                    float f = an_sol(tau*n, hx*(i-1+x_0), hy*(j-1+y_0), hz*(k-1+z_0));
-                    float abs_error = fabs(u - f);
-                    float rel_error = fabs((u - f) / f);
+                    double f = an_sol(tau*n, hx*(i-1+x_0), hy*(j-1+y_0), hz*(k-1+z_0));
+                    double abs_error = fabs(u - f);
+                    double rel_error = fabs((u - f) / f);
                     if(abs_error > max_abs_error) max_abs_error = abs_error;
                     if(rel_error > max_rel_error) max_rel_error = rel_error;
                 }
             }
         }
-        float loop_duration = MPI_Wtime() - loop_start;
+        double loop_duration = MPI_Wtime() - loop_start;
         total_loop_time += loop_duration;
         max_abs_errors.push_back(max_abs_error);
         max_rel_errors.push_back(max_rel_error);
         if(n < timesteps) exchange(n);
     }
-    float duration = MPI_Wtime() - start;
+    double duration = MPI_Wtime() - start;
     if(rank == 0) {
         out << "numerical solution calculated in " << (unsigned) (duration*1000) << "ms" << std::endl;
     }
-    std::vector<float> global_max_abs_errors(timesteps + 1);
-    std::vector<float> global_max_rel_errors(timesteps + 1);
-    MPI_Reduce(max_abs_errors.data(), global_max_abs_errors.data(), timesteps + 1, MPI_FLOAT, MPI_MAX, 0, cart_comm);
-    MPI_Reduce(max_rel_errors.data(), global_max_rel_errors.data(), timesteps + 1, MPI_FLOAT, MPI_MAX, 0, cart_comm);
+    std::vector<double> global_max_abs_errors(timesteps + 1);
+    std::vector<double> global_max_rel_errors(timesteps + 1);
+    MPI_Reduce(max_abs_errors.data(), global_max_abs_errors.data(), timesteps + 1, MPI_DOUBLE, MPI_MAX, 0, cart_comm);
+    MPI_Reduce(max_rel_errors.data(), global_max_rel_errors.data(), timesteps + 1, MPI_DOUBLE, MPI_MAX, 0, cart_comm);
     if(rank == 0) {
         for(int n = 0; n <= timesteps; n++) {
             out << "max abs and rel errors on layer " << n << ": " << global_max_abs_errors[n] << " " << global_max_rel_errors[n] << std::endl;
@@ -454,7 +454,7 @@ int main(int argc, char *argv[]) { // command line args: N, Np, Lx, Ly, Lz, T, t
         out.open(std::string("output_N") + std::to_string(N) + "_Np" + std::to_string(nprocs) + std::string("_MPI.txt"));
     }
 
-    float init_start = MPI_Wtime();
+    double init_start = MPI_Wtime();
     grids[0].init_grid(X + 2, Y + 2, Z + 2);
     grids[1].init_grid(X + 2, Y + 2, Z + 2);
     grids[2].init_grid(X + 2, Y + 2, Z + 2);
@@ -469,7 +469,7 @@ int main(int argc, char *argv[]) { // command line args: N, Np, Lx, Ly, Lz, T, t
     front.init(X+2, Y+2); front1.init(X+2, Y+2);
     back.init(X+2, Y+2); back1.init(X+2, Y+2);
     //std::cout << "grids initialized\n";
-    float init_duration = MPI_Wtime() - init_start;
+    double init_duration = MPI_Wtime() - init_start;
     if(rank == 0) {
         out << "grids initialized in " << (unsigned) (init_duration*1000) << "ms" << std::endl;
     }
