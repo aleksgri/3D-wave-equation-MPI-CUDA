@@ -3,7 +3,7 @@ HOST_COMP = mpic++
 
 ARCH = sm_60
 
-CXXFLAGS = -std=c++11 -I/usr/local/cuda/include
+CXXFLAGS = -std=c++11 -I/usr/local/cuda/include -O3
 LDFLAGS = -L/usr/local/cuda/lib64 -lcudart
 NVCCFLAGS = -arch=$(ARCH) -Xptxas -v
 

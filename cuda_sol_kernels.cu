@@ -26,10 +26,9 @@ __global__ void calculate_layer(double * grid0, double * grid1, double * grid2, 
     // x, y, z - dimensions of the grid
     // i1, ..., i2, ... - start and end indices
     int i, j, k;
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    k = idx % z;
-    j = (idx / z) % y;
-    i = idx / (y * z);
+    k = blockIdx.x * blockDim.x + threadIdx.x;
+    j = blockIdx.y * blockDim.y + threadIdx.y;
+    i = blockIdx.z * blockDim.z + threadIdx.z;
     if(i >= i1 && i <= i2 && j >= j1 && j <= j2 && k >= k1 && k <= k2) {
 
         double u = 2*grid1[i*y*z + j*z + k] - grid0[i*y*z + j*z + k] + a2 * tau * tau * 
@@ -69,24 +68,15 @@ __global__ void calculate_max_errors(double * abs_errors, double * rel_errors, i
     }
 }
 
-void calculate_errors(double * abs_errs, double * rel_errs, int x, int y, int z, double * result, cudaStream_t stream) {
-    double * blocks_max_abs;
-    double * blocks_max_rel;
-    double * abs_res;
-    double * rel_res;
+void calculate_errors(double * abs_errs, double * rel_errs, int x, int y, int z, double * result, double * blocks_max_abs, double * blocks_max_rel, double * abs_res, double * rel_res, cudaStream_t stream) {
     int block_size = 512;
     int size = x*y*z;
     int blocks = (size + block_size - 1) / block_size;
     dim3 gridDim(blocks);
     dim3 blockDim(block_size);
     //std::cout << blocks << " " << block_size << " " << size << "\n";
-    cudaMalloc(&blocks_max_abs, blocks*sizeof(double));
-    cudaMalloc(&blocks_max_rel, blocks*sizeof(double));
-    cudaMemset(blocks_max_abs, 0.0, blocks*sizeof(double));
-    cudaMemset(blocks_max_rel, 0.0, blocks*sizeof(double));
-    cudaMallocHost(&abs_res, blocks*sizeof(double));
-    cudaMallocHost(&rel_res, blocks*sizeof(double));
     calculate_max_errors<<<gridDim, blockDim, 0, stream>>>(abs_errs, rel_errs, x, y, z, blocks_max_abs, blocks_max_rel);
+    
     cudaStreamSynchronize(stream);
     cudaMemcpy(abs_res, blocks_max_abs, blocks*sizeof(double), cudaMemcpyDeviceToHost);
     cudaMemcpy(rel_res, blocks_max_rel, blocks*sizeof(double), cudaMemcpyDeviceToHost);
@@ -96,18 +86,15 @@ void calculate_errors(double * abs_errs, double * rel_errs, int x, int y, int z,
         if(rel_res[i] > rel_err) rel_err = rel_res[i];
     }
     result[0] = abs_err; result[1] = rel_err;
-    cudaFreeHost(abs_res); cudaFreeHost(rel_res);
-    cudaFree(blocks_max_abs); cudaFree(blocks_max_rel);
 }
 
 __global__ void copy_to_matrices(double * grid, double * matrix1, double * matrix2, int x, int y, int z,
                                     int dim, int start, int end) {
     // x, y, z = X+2, Y+2, Z+2
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if(dim == 1) {
         int i1 = start, i2 = end;
-        int j = idx / z;
-        int k = idx % z;
+        int j = blockIdx.y * blockDim.y + threadIdx.y;
+        int k = blockIdx.x * blockDim.x + threadIdx.x;
         if(j >= 1 && k >= 1 && j <= y-2 && k <= z-2) {
             matrix1[j*z + k] = grid[i1*y*z + j*z + k];
             matrix2[j*z + k] = grid[i2*y*z + j*z + k];
@@ -115,8 +102,8 @@ __global__ void copy_to_matrices(double * grid, double * matrix1, double * matri
     }
     if(dim == 2) {
         int j1 = start, j2 = end;
-        int i = idx / z;
-        int k = idx % z;
+        int i = blockIdx.y * blockDim.y + threadIdx.y;
+        int k = blockIdx.x * blockDim.x + threadIdx.x;
         if(i >= 1 && k >= 1 && i <= x-2 && k <= z-2) {
             matrix1[i*z + k] = grid[i*y*z + j1*z + k];
             matrix2[i*z + k] = grid[i*y*z + j2*z + k];
@@ -124,8 +111,8 @@ __global__ void copy_to_matrices(double * grid, double * matrix1, double * matri
     }
     if (dim == 3) {
         int k1 = start, k2 = end;
-        int i = idx / y;
-        int j = idx % y;
+        int i = blockIdx.y * blockDim.y + threadIdx.y;
+        int j = blockIdx.x * blockDim.x + threadIdx.x;
         if(i >= 1 && j >= 1 && i <= x-2 && j <= y-2) {
             matrix1[i*y + j] = grid[i*y*z + j*z + k1];
             matrix2[i*y + j] = grid[i*y*z + j*z + k2];
@@ -135,38 +122,40 @@ __global__ void copy_to_matrices(double * grid, double * matrix1, double * matri
 
 void call_copy_to_matrices(double * grid, double * matrix1, double * matrix2, int x, int y, int z,
                             int dim, int start, int end, cudaStream_t stream) {
-    int block_size = 512;
-    int size;
-    if(dim == 1) size = y*z;
-    else if(dim == 2) size = x*z;
-    else size = x*y;
-    int grid_size = (size + block_size - 1) / block_size;
-    dim3 gridDim(grid_size);
-    dim3 blockDim(block_size);
+    dim3 gridDim;
+    dim3 blockDim(32, 16, 1);
+
+    if(dim == 1) {
+        gridDim = dim3((z + 31) / 32, (y + 15) / 16);
+    } else if(dim == 2) {
+        gridDim = dim3((z + 31) / 32, (x + 15) / 16);
+    } else {
+        gridDim = dim3((y + 31) / 32, (x + 15) / 16);
+    }
+    
     copy_to_matrices<<<gridDim, blockDim, 0, stream>>>(grid, matrix1, matrix2, x, y, z, dim, start, end);
 }
 
 __global__ void copy_to_grid(double * grid, double * matrix, int x, int y, int z,
                             int dim, int index) {
     // x, y, z = X+2, Y+2, Z+2
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int i, j, k, m;
     if(dim == 1) {
         i = index;
-        j = idx / z;
-        k = idx % z;
+        j = blockIdx.y * blockDim.y + threadIdx.y;
+        k = blockIdx.x * blockDim.x + threadIdx.x;
         m = j*z + k;
         if(j >= 1 && k >= 1 && j <= y-2 && k <= z-2) grid[i*y*z + j*z + k] = matrix[m];
     } else if (dim == 2) {
         j = index;
-        i = idx / z;
-        k = idx % z;
+        i = blockIdx.y * blockDim.y + threadIdx.y;
+        k = blockIdx.x * blockDim.x + threadIdx.x;
         m = i*z + k;
         if(i >= 1 && k >= 1 && i <= x-2 && k <= z-2) grid[i*y*z + j*z + k] = matrix[m];
     } else {
         k = index;
-        i = idx / y;
-        j = idx % y;
+        i = blockIdx.y * blockDim.y + threadIdx.y;
+        j = blockIdx.x * blockDim.x + threadIdx.x;
         m = i*y + j;
         if(i >= 1 && j >= 1 && i <= x-2 && j <= y-2) grid[i*y*z + j*z + k] = matrix[m];
     }
@@ -174,23 +163,24 @@ __global__ void copy_to_grid(double * grid, double * matrix, int x, int y, int z
 
 void call_copy_to_grid(double * grid, double * matrix, int x, int y, int z,
                         int dim, int index, cudaStream_t stream) {
-    int block_size = 512;
-    int size;
-    if(dim == 1) size = y*z;
-    else if(dim == 2) size = x*z;
-    else size = x*y;
-    int grid_size = (size + block_size - 1) / block_size;
-    dim3 gridDim(grid_size);
-    dim3 blockDim(block_size);
+    dim3 gridDim;
+    dim3 blockDim(32, 16, 1);
+    if(dim == 1) {
+        gridDim = dim3((z + 31) / 32, (y + 15) / 16);
+    } else if(dim == 2) {
+        gridDim = dim3((z + 31) / 32, (x + 15) / 16);
+    } else {
+        gridDim = dim3((y + 31) / 32, (x + 15) / 16);
+    }
+    
     copy_to_grid<<<gridDim, blockDim, 0, stream>>>(grid, matrix, x, y, z, dim, index);
 }
 
 __global__ void layer0(double * grid0, int x, int y, int z, double * abs_errs, double * rel_errs) {
     int i, j, k;
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    k = idx % z;
-    j = (idx / z) % y;
-    i = idx / (y * z);
+    k = blockIdx.x * blockDim.x + threadIdx.x;
+    j = blockIdx.y * blockDim.y + threadIdx.y;
+    i = blockIdx.z * blockDim.z + threadIdx.z;
     if(i >= 1 && i <= x-2 && j >= 1 && j <= y-2 && k >= 1 && k <= z-2) {
         double u = cos(0.0 + 2*PI) * sin(2*PI*hx*(i-1+x_0)/Lx) * sin(PI*hy*(j-1+y_0)/Ly) * sin(PI*hz*(k-1+z_0)/Lz);
         grid0[i*y*z + j*z + k] = u;
@@ -204,10 +194,9 @@ __global__ void layer1(double * grid0, double * grid1, int x, int y, int z,
                         double * abs_errs, double * rel_errs)
 {
     int i, j, k;
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    k = idx % z;
-    j = (idx / z) % y;
-    i = idx / (y * z);
+    k = blockIdx.x * blockDim.x + threadIdx.x;
+    j = blockIdx.y * blockDim.y + threadIdx.y;
+    i = blockIdx.z * blockDim.z + threadIdx.z;
     if(i >= i1 && i <= i2 && j >= j1 && j <= j2 && k >= k1 && k <= k2) {
         double u = grid0[i*y*z + j*z + k] + a2*tau*tau*0.5*(
             (grid0[(i+1)*y*z + j*z + k] + grid0[(i-1)*y*z + j*z + k] - 2*grid0[i*y*z + j*z + k])/(hx*hx) +
@@ -227,11 +216,8 @@ void call_calculate_layer(double * grid0, double * grid1, double * grid2, int x,
                         int i1, int j1, int k1, int i2, int j2, int k2,
                         double * abs_errs, double * rel_errs, cudaStream_t stream)
 {
-    int block_size = 512;
-    int size = x*y*z;
-    int grid_size = (size + block_size - 1) / block_size;
-    dim3 gridDim(grid_size);
-    dim3 blockDim(block_size);
+    dim3 gridDim((z + 31) / 32, (y + 3) / 4, (x + 3) / 4);
+    dim3 blockDim(32, 4, 4);
     if(n == 0) {
         layer0<<<gridDim, blockDim, 0, stream>>>(grid0, x, y, z, abs_errs, rel_errs);
     } else if(n == 1) {
@@ -245,10 +231,8 @@ __global__ void prepare_layer(double * grid0, double * grid1, double * grid2, in
                                 int j1, int k1, int j2, int k2, unsigned int b)
 {
     int j, k;
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int length = max(x, max(y, z));
-    k = idx % length;
-    j = (idx / length);
+    k = blockIdx.x * blockDim.x + threadIdx.x;
+    j = blockIdx.y * blockDim.y + threadIdx.y;
     if(b & 1 != 0 && j >= 1 && j <= x-2 && k >= 1 && k <= y-2) grid2[j*y*z + k*z + 1] = 0.0;
     if(b & 2 != 0 && j >= 1 && j <= x-2 && k >= 1 && k <= y-2) grid2[j*y*z + k*z + z-2] = 0.0;
     if(b & 4 != 0 && j >= 1 && j <= x-2 && k >= 1 && k <= z-2) grid2[j*y*z + 1*z + k] = 0.0;
@@ -277,11 +261,8 @@ __global__ void prepare_layer(double * grid0, double * grid1, double * grid2, in
 void call_prepare_layer(double * grid0, double * grid1, double * grid2, int n, int x, int y, int z,
                                 int j1, int k1, int j2, int k2, unsigned int b, cudaStream_t stream)
 {
-    int block_size = 512;
     int length = max(x, max(y, z));
-    int size = length*length;
-    int grid_size = (size + block_size - 1) / block_size;
-    dim3 gridDim(grid_size);
-    dim3 blockDim(block_size);
+    dim3 gridDim((length + 31) / 32, (length + 15) / 16, 1);
+    dim3 blockDim(32, 16, 1);
     prepare_layer<<<gridDim, blockDim, 0, stream>>>(grid0, grid1, grid2, n, x, y, z, j1, k1, j2, k2, b);
 }

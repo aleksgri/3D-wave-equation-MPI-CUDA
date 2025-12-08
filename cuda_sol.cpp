@@ -37,8 +37,7 @@ void call_calculate_start(double * grid0, double * grid1, int x, int y, int z, i
                         int i1, int j1, int k1, int i2, int j2, int k2,
                         double * abs_errs, double * rel_errs, cudaStream_t stream);
 
-void calculate_errors(double * abs_errs, double * rel_errs, int x, int y, int z, double * result, cudaStream_t stream);
-
+void calculate_errors(double * abs_errs, double * rel_errs, int x, int y, int z, double * result, double * blocks_max_abs, double * blocks_max_rel, double * abs_res, double * rel_res, cudaStream_t stream);
 void call_calculate_layer(double * grid0, double * grid1, double * grid2, int x, int y, int z, int n,
                         int i1, int j1, int k1, int i2, int j2, int k2,
                         double * abs_errs, double * rel_errs, cudaStream_t stream);
@@ -204,6 +203,10 @@ Grid rel_errors;
 std::vector<double> max_abs_errors;
 std::vector<double> max_rel_errors;
 double errors[2] = {0.0, 0.0};
+double * blocks_max_abs;
+double * blocks_max_rel;
+double * abs_res;
+double * rel_res;
 
 MPI_Comm cart_comm;
 MPI_Comm local_comm;
@@ -305,7 +308,7 @@ void exchange(int n) {
     if(front_rank >= 0) call_copy_to_grid(grids[n%3].get_ptr_device(), front.array_d, X+2, Y+2, Z+2, 3, Z+1, stream);
     if(up_rank >= 0) call_copy_to_grid(grids[n%3].get_ptr_device(), up.array_d, X+2, Y+2, Z+2, 1, X+1, stream);
     if(down_rank >= 0) call_copy_to_grid(grids[n%3].get_ptr_device(), down.array_d, X+2, Y+2, Z+2, 1, 0, stream);
-
+    
 }
 
 void calculate_start() { // начальные значения
@@ -319,7 +322,7 @@ void calculate_start() { // начальные значения
     total_loop_time += t;
 
     cudaEventRecord(error_calculation_started, stream);
-    calculate_errors(abs_errors.get_ptr_device(), rel_errors.get_ptr_device(), X+2, Y+2, Z+2, errors, stream);
+    calculate_errors(abs_errors.get_ptr_device(), rel_errors.get_ptr_device(), X+2, Y+2, Z+2, errors, blocks_max_abs, blocks_max_rel, abs_res, rel_res, stream);
     cudaEventRecord(error_calculation_finished, stream);
     cudaEventSynchronize(error_calculation_finished);
     cudaEventElapsedTime(&t, error_calculation_started, error_calculation_finished);
@@ -351,7 +354,7 @@ void calculate_start() { // начальные значения
     cudaStreamSynchronize(stream);
 
     cudaEventRecord(error_calculation_started, stream);
-    calculate_errors(abs_errors.get_ptr_device(), rel_errors.get_ptr_device(), X+2, Y+2, Z+2, errors, stream);
+    calculate_errors(abs_errors.get_ptr_device(), rel_errors.get_ptr_device(), X+2, Y+2, Z+2, errors, blocks_max_abs, blocks_max_rel, abs_res, rel_res, stream);
     cudaEventRecord(error_calculation_finished, stream);
     cudaEventSynchronize(error_calculation_finished);
     cudaEventElapsedTime(&t, error_calculation_started, error_calculation_finished);
@@ -396,20 +399,25 @@ void calculate_num_sol() {
         cudaEventRecord(loop_started, stream);
         call_calculate_layer(grids[(n+1) % 3].get_ptr_device(), grids[(n+2) % 3].get_ptr_device(), grids[n % 3].get_ptr_device(), X+2, Y+2, Z+2, n, x1, y1, z1, x, y, z, abs_errors.get_ptr_device(), rel_errors.get_ptr_device(), stream);
         cudaEventRecord(loop_finished, stream);
-        cudaStreamSynchronize(stream); // must wait before calculating errors and exchanging
-        calculate_errors(abs_errors.get_ptr_device(), rel_errors.get_ptr_device(), X+2, Y+2, Z+2, errors, stream);
+        //cudaStreamSynchronize(stream); // must wait before calculating errors and exchanging
+        cudaEventRecord(error_calculation_started, stream);
+        calculate_errors(abs_errors.get_ptr_device(), rel_errors.get_ptr_device(), X+2, Y+2, Z+2, errors, blocks_max_abs, blocks_max_rel, abs_res, rel_res, stream);
+        cudaEventRecord(error_calculation_finished, stream);
+        cudaEventSynchronize(error_calculation_finished);
+        cudaEventElapsedTime(&t, error_calculation_started, error_calculation_finished);
+        total_error_time += t;
         if(n < timesteps) exchange(n);
         cudaEventElapsedTime(&t, loop_started, loop_finished);
         total_loop_time += t;
         //std::cout << t << "\n";
-        cudaStreamSynchronize(stream);
+        //cudaStreamSynchronize(stream);
         // std::cout << rank << " " << max_abs_errors.size() << " " << errors[0] << std::endl;
         max_abs_errors.push_back(errors[0]);
         max_rel_errors.push_back(errors[1]);
         abs_errors.memset_device(0.0);
         rel_errors.memset_device(0.0);
         
-        cudaStreamSynchronize(stream);
+        //cudaStreamSynchronize(stream);
     }
     cudaEventRecord(finished, stream);
     cudaEventSynchronize(finished);
@@ -430,6 +438,7 @@ void calculate_num_sol() {
         out << "total host-device exchange time: " << total_exchange_time << " ms\n";
         out << "total loop time: " << total_loop_time << " ms\n";
         out << "total MPI exchange time: " << total_mpi_exchange_time << " ms\n";
+        out << "total error calculation time: " << total_error_time << " ms\n";
     }
 }
 
@@ -528,6 +537,12 @@ int main(int argc, char *argv[]) { // command line args: N, Np, Lx, Ly, Lz, T, t
 
     cudaEventRecord(initialization_started, stream);
 
+    int blocks = ((X + 2)*(Y + 2)*(Z + 2) + 511)/512;
+    cudaMalloc(&blocks_max_abs, blocks*sizeof(double));
+    cudaMalloc(&blocks_max_rel, blocks*sizeof(double));
+    cudaMallocHost(&abs_res, blocks*sizeof(double));
+    cudaMallocHost(&rel_res, blocks*sizeof(double));
+
     grids[0].init_grid_device(X + 2, Y + 2, Z + 2); // init only on device
     grids[1].init_grid_device(X + 2, Y + 2, Z + 2);
     grids[2].init_grid_device(X + 2, Y + 2, Z + 2);
@@ -575,6 +590,9 @@ int main(int argc, char *argv[]) { // command line args: N, Np, Lx, Ly, Lz, T, t
     cudaEventDestroy(initialization_finished);
     cudaStreamDestroy(stream);
     cudaStreamDestroy(exchange_stream);
+    cudaFreeHost(abs_res); cudaFreeHost(rel_res);
+    cudaFree(blocks_max_abs); cudaFree(blocks_max_rel);
+
 
     return 0;
 }
